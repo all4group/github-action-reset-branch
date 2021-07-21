@@ -1,0 +1,61 @@
+name: "Reset branch"
+description: "Reset branch to another branch"
+
+branding:
+  icon: "cloud"
+  color: "blue"
+
+inputs:
+  branch:
+    description: "Branch to reset"
+    required: true
+  source:
+    description: "Source branch"
+    required: true
+  protected:
+    description: "Protected branches"
+    required: false
+    default: "main,develop,release"
+
+runs:
+  using: "composite"
+  steps:
+    - id: prepare
+      run: |
+        RESET_TARGET_BRANCH="${{ github.event.inputs.branch }}"
+        if [ "${RESET_TARGET_BRANCH:0:11}" == "refs/heads/" ]; then
+          RESET_TARGET_BRANCH=$(echo ${RESET_TARGET_BRANCH} | cut -c 12-)
+        fi
+        echo "RESET_TARGET_BRANCH=${RESET_TARGET_BRANCH}" >> $GITHUB_ENV
+        RESET_SOURCE_BRANCH="${{ github.event.inputs.source }}"
+        if [ "${RESET_SOURCE_BRANCH:0:11}" == "refs/heads/" ]; then
+          RESET_SOURCE_BRANCH=$(echo ${RESET_SOURCE_BRANCH} | cut -c 12-)
+        fi
+        echo "RESET_SOURCE_BRANCH=${RESET_SOURCE_BRANCH}" >> $GITHUB_ENV
+        RESET_PROTECTED_BRANCHES="${{ inputs.protected }}"
+        if [ "${{ github.event.inputs.protected }}" != "" ]; then
+          RESET_PROTECTED_BRANCHES="${{ github.event.inputs.protected }}"
+        fi
+        RESET_PROTECTED_BRANCHES=$(echo ${{ RESET_PROTECTED_BRANCHES }} | tr -d "[:space:]")
+        echo "RESET_PROTECTED_BRANCHES=${RESET_PROTECTED_BRANCHES}" >> $GITHUB_ENV
+      shell: bash
+    - id: reset
+      run: |
+        if [ "${{ env.RESET_TARGET_BRANCH }}" != "${{ env.RESET_SOURCE_BRANCH }}" ]; then
+          echo "=> protected branches => ${{ env.RESET_PROTECTED_BRANCHES }}"
+          for RESET_PROTECTED_BRANCH in $(echo ${{ env.RESET_PROTECTED_BRANCHES }} | tr "," " ")
+          do
+            if [ "${{ env.RESET_TARGET_BRANCH }}" == "${RESET_PROTECTED_BRANCH}" ]; then
+              RESET_ERROR_MESSAGE="protected branch ${RESET_PROTECTED_BRANCH} in danger"
+              echo "=> ${RESET_ERROR_MESSAGE}"
+              echo "::error::${RESET_ERROR_MESSAGE}"
+              exit 1
+            fi
+          done
+          echo "=> resetting branch ${{ env.RESET_TARGET_BRANCH }} to branch ${{ env.RESET_SOURCE_BRANCH }}"
+          git checkout -B ${{ env.RESET_TARGET_BRANCH }} ${{ env.RESET_SOURCE_BRANCH }}
+          git push --force
+        else
+          echo "=> branches ${{ env.RESET_TARGET_BRANCH }} and ${{ env.RESET_SOURCE_BRANCH }} are the same, nothing to do"
+        fi
+      shell: bash
